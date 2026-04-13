@@ -1,0 +1,8 @@
+user_name: Tim
+microphone: Brio 505
+output_device: BlackHole 2ch
+obsidian_template: ~/Work/Templates/MeetingTemplate.md
+meetings_dir: ~/Work/Meetings
+whisper_url: http://localhost:8765/inference
+whisper_api_key:
+llm_command: claude -p --model sonnet
