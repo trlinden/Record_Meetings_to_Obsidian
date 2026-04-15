@@ -20,6 +20,7 @@ The installer will prompt you for choices along the way. It installs:
 - **jq** — JSON parsing
 - **BlackHole 2ch** — virtual audio loopback driver
 - **Node.js** and **Claude Code CLI** — meeting summarization
+- **llm CLI** (optional) — for using a local LLM instead of Claude
 - **Whisper** (local or remote) — speech-to-text transcription
 - **ZoomMeetApp** — builds the SwiftUI GUI
 
@@ -116,6 +117,7 @@ meetings_dir: ~/Work/Meetings                          # Where meeting notes are
 whisper_url: http://localhost:8765/inference            # Whisper server endpoint
 whisper_api_key:                                       # API key for remote Whisper (leave blank for local)
 llm_command: claude -p --model sonnet                  # Command used to summarize transcripts
+llm_base_url:                                          # OpenAI-compatible API base URL (for local LLMs)
 ```
 
 The Obsidian template must contain these headings (the script inserts content after each):
@@ -183,6 +185,45 @@ If your LLM tool doesn't accept stdin + a trailing argument natively, write a sm
 ```bash
 cat transcript.txt | <llm_command> "<contents of llm_instructions.md>"
 ```
+
+### Using a Local LLM with the `llm` CLI
+
+If you'd rather not send your meeting transcripts to the cloud, you can run a local LLM instead. The [`llm`](https://llm.datasette.io/) CLI tool by Simon Willison works well for this — it reads from stdin and accepts a prompt argument, which is exactly what ZoomMeet expects.
+
+**1. Install `llm`**
+
+```bash
+pip install llm
+```
+
+The installer will offer to do this for you, or you can install it later.
+
+**2. Run a local LLM server**
+
+You need a local server that provides an OpenAI-compatible API. Popular options:
+
+- [LM Studio](https://lmstudio.ai/) — GUI app, start the server from the "Local Server" tab (default: `http://127.0.0.1:1234/v1`)
+- [Ollama](https://ollama.ai/) — CLI-based, runs on `http://localhost:11434/v1` after `ollama serve`
+
+**3. Configure `config.yaml`**
+
+Set `llm_command` to use `llm` with your chosen model, and `llm_base_url` to point to your local server:
+
+```yaml
+llm_command: llm -m qwen3.5-9b
+llm_base_url: http://127.0.0.1:1234/v1
+```
+
+The `llm_base_url` value is passed to the `llm` tool as the `OPENAI_API_BASE` environment variable, which tells it to talk to your local server instead of OpenAI's API.
+
+To switch back to Claude, comment out or remove those lines and restore the defaults:
+
+```yaml
+llm_command: claude -p --model sonnet
+llm_base_url:
+```
+
+**Note:** Local models vary in quality. For meeting summarization, a model with at least 7-9B parameters is recommended. Smaller models may struggle with longer transcripts or miss action items.
 
 ## Usage
 

@@ -136,7 +136,31 @@ else
     ok "Claude Code CLI installed"
 fi
 
-# --- 8. Whisper: local vs remote -------------------------------------------
+# --- 8. Python llm CLI (optional, for local LLM) --------------------------
+
+info "Local LLM support (optional)"
+echo ""
+echo "    By default, ZoomMeet uses Claude Code to summarize transcripts."
+echo "    If you'd prefer to use a local LLM (e.g. via LM Studio or Ollama),"
+echo "    you can install the 'llm' CLI tool."
+echo ""
+
+if command -v llm &>/dev/null; then
+    skip "llm CLI already installed"
+else
+    if ask_yes_no "Install the llm CLI tool for local LLM support?"; then
+        pip3 install llm
+        if command -v llm &>/dev/null; then
+            ok "llm CLI installed"
+        else
+            warn "llm installed but not on PATH — you may need to add ~/.local/bin to your PATH"
+        fi
+    else
+        echo "    Skipped — you can install it later with: pip install llm"
+    fi
+fi
+
+# --- 9. Whisper: local vs remote ------------------------------------------
 
 info "Whisper transcription setup"
 echo ""
@@ -235,7 +259,7 @@ else
     ok "Using remote Whisper server: $WHISPER_URL_VALUE"
 fi
 
-# --- 9. ANTHROPIC_API_KEY --------------------------------------------------
+# --- 10. ANTHROPIC_API_KEY -------------------------------------------------
 
 info "Checking Anthropic API key..."
 if [ -n "$ANTHROPIC_API_KEY" ]; then
@@ -261,7 +285,7 @@ else
     fi
 fi
 
-# --- 10. Configuration -----------------------------------------------------
+# --- 11. Configuration -----------------------------------------------------
 
 info "Setting up configuration..."
 
@@ -315,7 +339,7 @@ EOF
     ok "config.yaml created"
 fi
 
-# --- 11. Obsidian template --------------------------------------------------
+# --- 12. Obsidian template --------------------------------------------------
 
 info "Checking Obsidian template..."
 # Expand ~ in the template path
@@ -341,13 +365,13 @@ fi
 
 mkdir -p "$MEETINGS_PATH"
 
-# --- 12. Make script executable ---------------------------------------------
+# --- 13. Make script executable ---------------------------------------------
 
 info "Checking zoommeet2 script..."
 chmod +x "$INSTALL_DIR/zoommeet2"
 ok "zoommeet2 is executable"
 
-# --- 13. people.txt ---------------------------------------------------------
+# --- 14. people.txt ---------------------------------------------------------
 
 if [ ! -f "$INSTALL_DIR/llm_instructions.md" ]; then
     cat > "$INSTALL_DIR/llm_instructions.md" << 'LLMEOF'
@@ -378,7 +402,7 @@ if [ ! -f "$INSTALL_DIR/people.txt" ]; then
     ok "Created empty people.txt (add entries like: Carlos [[Carlos Blanco]])"
 fi
 
-# --- 14. Build SwiftUI app -------------------------------------------------
+# --- 15. Build SwiftUI app -------------------------------------------------
 
 info "Building ZoomMeetApp..."
 if [ -d "$INSTALL_DIR/ZoomMeetApp" ]; then

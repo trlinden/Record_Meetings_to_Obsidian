@@ -3,6 +3,9 @@ microphone: Brio 505
 output_device: BlackHole 2ch
 obsidian_template: ~/Work/Templates/MeetingTemplate.md
 meetings_dir: ~/Work/Meetings
-whisper_url: http://localhost:8765/inference
+whisper_url: http://localhost:8766/inference
 whisper_api_key:
-llm_command: claude -p --model sonnet
+llm_command: llm -m qwen3.5-9b
+llm_base_url: http://127.0.0.1:1234/v1
+#llm_command: claude -p --model sonnet
+#llm_base_url: 

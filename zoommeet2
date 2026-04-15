@@ -19,6 +19,10 @@ else
 fi
 DATE_TODAY=$(echo "$TIMESTAMP" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)_.*/\1-\2-\3/')
 
+# Work from the script's own directory so relative audio paths resolve correctly
+# regardless of the caller's working directory (e.g. running from ZoomMeetApp/)
+cd "$(dirname "$0")" || exit 1
+
 # Read config from config.yaml (same directory as script)
 CONFIG_FILE="$(dirname "$0")/config.yaml"
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -128,78 +132,91 @@ else
     echo "✅ Combined audio saved to: $COMBINED_FILE"
 fi
 
-# Check whisper server is running
-if ! curl -s "${WHISPER_AUTH[@]}" "$WHISPER_URL" > /dev/null 2>&1; then
-    echo "⚠️  Whisper server not reachable at $WHISPER_URL"
-    echo "    Check it is running: launchctl list | grep whisper"
-    echo "    Logs: cat /tmp/whisper-server.log"
-    exit 1
-fi
-
-# Transcribe both tracks separately with timestamps for speaker diarization
-echo ""
-echo "⏳ Transcribing microphone (${USER_NAME}) with Whisper..."
-TIM_JSON=$(curl -s "${WHISPER_AUTH[@]}" "$WHISPER_URL" \
-    -F file="@${IN_FILE}" \
-    -F response_format=verbose_json)
-
-echo "⏳ Transcribing Zoom audio (Others) with Whisper..."
-OTHERS_JSON=$(curl -s "${WHISPER_AUTH[@]}" "$WHISPER_URL" \
-    -F file="@${OUT_FILE}" \
-    -F response_format=verbose_json)
-
-# Validate both transcriptions returned segments
-TIM_COUNT=$(echo "$TIM_JSON" | jq '.segments | length' 2>/dev/null)
-OTHERS_COUNT=$(echo "$OTHERS_JSON" | jq '.segments | length' 2>/dev/null)
-
-if [ -z "$TIM_COUNT" ] && [ -z "$OTHERS_COUNT" ]; then
-    echo "❌ Both transcriptions failed — audio files kept"
-    exit 1
-fi
-
-# Extract segments from each track, tag with speaker, merge, sort by start time
-# Each segment becomes: start_time \t speaker \t text
-TRANSCRIPT=$(
-{
-    if [ -n "$TIM_COUNT" ] && [ "$TIM_COUNT" -gt 0 ] 2>/dev/null; then
-        echo "$TIM_JSON" | jq -r '.segments[] | "\(.start)\t'"${USER_NAME}"'\t\(.text)"'
-    fi
-    if [ -n "$OTHERS_COUNT" ] && [ "$OTHERS_COUNT" -gt 0 ] 2>/dev/null; then
-        echo "$OTHERS_JSON" | jq -r '.segments[] | "\(.start)\tOthers\t\(.text)"'
-    fi
-} | sort -t$'\t' -k1 -g | awk -F'\t' '
-    {
-        speaker = $2
-        text = $3
-        # Strip leading/trailing whitespace from text
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", text)
-        if (speaker != prev_speaker) {
-            if (NR > 1) print ""
-            printf "%s: %s", speaker, text
-        } else {
-            printf " %s", text
-        }
-        prev_speaker = speaker
-    }
-    END { print "" }
-')
-
-if [ -n "$TRANSCRIPT" ]; then
-    {
-        if [ -n "$ATTENDEES" ]; then
-            echo "Attendees: $ATTENDEES"
-            echo ""
-        fi
-        echo "$TRANSCRIPT"
-    } > "${TIMESTAMP}.txt"
-    echo "✅ Transcript saved to: ${TIMESTAMP}.txt"
+# Skip transcription if a transcript already exists (common resume case:
+# recording + transcription succeeded but LLM summarization failed)
+if [ -n "$RESUME_TIMESTAMP" ] && [ -f "${TIMESTAMP}.txt" ]; then
+    echo "✅ Using existing transcript: ${TIMESTAMP}.txt"
 else
-    echo "❌ Transcription produced no output — audio files kept"
-    exit 1
-fi
+    # Check whisper server is running
+    if ! curl -s "${WHISPER_AUTH[@]}" "$WHISPER_URL" > /dev/null 2>&1; then
+        echo "⚠️  Whisper server not reachable at $WHISPER_URL"
+        echo "    Check it is running: launchctl list | grep whisper"
+        echo "    Logs: cat /tmp/whisper-server.log"
+        exit 1
+    fi
 
-# Clean up individual track files now that transcription is done
-rm "$OUT_FILE" "$IN_FILE"
+    # Verify individual track files exist (needed for speaker diarization)
+    if [ ! -f "$IN_FILE" ] || [ ! -f "$OUT_FILE" ]; then
+        echo "❌ Cannot transcribe: individual track files missing (${IN_FILE}, ${OUT_FILE})"
+        echo "    The combined file alone cannot be used for speaker separation."
+        exit 1
+    fi
+
+    # Transcribe both tracks separately with timestamps for speaker diarization
+    echo ""
+    echo "⏳ Transcribing microphone (${USER_NAME}) with Whisper..."
+    TIM_JSON=$(curl -s "${WHISPER_AUTH[@]}" "$WHISPER_URL" \
+        -F file="@${IN_FILE}" \
+        -F response_format=verbose_json)
+
+    echo "⏳ Transcribing Zoom audio (Others) with Whisper..."
+    OTHERS_JSON=$(curl -s "${WHISPER_AUTH[@]}" "$WHISPER_URL" \
+        -F file="@${OUT_FILE}" \
+        -F response_format=verbose_json)
+
+    # Validate both transcriptions returned segments
+    TIM_COUNT=$(echo "$TIM_JSON" | jq '.segments | length' 2>/dev/null)
+    OTHERS_COUNT=$(echo "$OTHERS_JSON" | jq '.segments | length' 2>/dev/null)
+
+    if [ -z "$TIM_COUNT" ] && [ -z "$OTHERS_COUNT" ]; then
+        echo "❌ Both transcriptions failed — audio files kept"
+        exit 1
+    fi
+
+    # Extract segments from each track, tag with speaker, merge, sort by start time
+    # Each segment becomes: start_time \t speaker \t text
+    TRANSCRIPT=$(
+    {
+        if [ -n "$TIM_COUNT" ] && [ "$TIM_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "$TIM_JSON" | jq -r '.segments[] | "\(.start)\t'"${USER_NAME}"'\t\(.text)"'
+        fi
+        if [ -n "$OTHERS_COUNT" ] && [ "$OTHERS_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "$OTHERS_JSON" | jq -r '.segments[] | "\(.start)\tOthers\t\(.text)"'
+        fi
+    } | sort -t$'\t' -k1 -g | awk -F'\t' '
+        {
+            speaker = $2
+            text = $3
+            # Strip leading/trailing whitespace from text
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", text)
+            if (speaker != prev_speaker) {
+                if (NR > 1) print ""
+                printf "%s: %s", speaker, text
+            } else {
+                printf " %s", text
+            }
+            prev_speaker = speaker
+        }
+        END { print "" }
+    ')
+
+    if [ -n "$TRANSCRIPT" ]; then
+        {
+            if [ -n "$ATTENDEES" ]; then
+                echo "Attendees: $ATTENDEES"
+                echo ""
+            fi
+            echo "$TRANSCRIPT"
+        } > "${TIMESTAMP}.txt"
+        echo "✅ Transcript saved to: ${TIMESTAMP}.txt"
+    else
+        echo "❌ Transcription produced no output — audio files kept"
+        exit 1
+    fi
+
+    # Clean up individual track files now that transcription is done
+    rm -f "$OUT_FILE" "$IN_FILE"
+fi
 
 # --- Summarize and create Obsidian meeting note ---
 
@@ -258,6 +275,11 @@ LLM_PROMPT=$(sed "s/{{USER_NAME}}/${USER_NAME}/g" "$LLM_INSTRUCTIONS_FILE")
 
 LLM_COMMAND=$(yaml_val llm_command)
 LLM_COMMAND="${LLM_COMMAND:-claude -p --model sonnet}"
+LLM_BASE_URL=$(yaml_val llm_base_url)
+
+if [ -n "$LLM_BASE_URL" ]; then
+    export OPENAI_API_BASE="$LLM_BASE_URL"
+fi
 
 LLM_OUTPUT=$(cat "${TIMESTAMP}.txt" | $LLM_COMMAND "$LLM_PROMPT")
 
