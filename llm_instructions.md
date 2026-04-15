@@ -14,5 +14,4 @@ Rules:
 - Action items use the - [ ] checkbox format. Only include items for {{USER_NAME}}.
 - If a deadline was mentioned, put it in parentheses at the end of the item.
 - If there are no action items for {{USER_NAME}}, write: - [ ] No action items identified
-- Brevity is key. After coming up with the LOG and the action items, check through again to see if any can be easily combined, eliminated, or reduced.
 - Do not include anything outside the markers.
